@@ -1,0 +1,251 @@
+# Blockexplorer
+
+Attention!!!! 
+Configure config.json!!!
+
+## Frontend
+
+Edit source/environments.ts and source/environments.prod.ts
+
+```
+export const environment = {
+  production: false,
+  backend: 'http://10.0.0.13:8008',
+  documentionApi: 'https://docs.evolution-network.org',
+  decimalPlaces: 2
+};
+```
+
+1. `backend` FQDN of your backend with the `frontEnd_api`
+2. `documentationApi` Address used to build documentation explanations
+3. `decimalPlaces` how many decimal places to use when displaying currency
+
+#### Run Frontend development Server
+
+```
+npx ng serve -o
+```
+
+## Backend Server
+
+Edit `config.json`
+
+```
+{
+    "api":"http://10.0.0.13:12111",
+    "frontEnd_api": "http://localhost:4200",
+    "server_port": "8008",
+    "auditable_wallet": {
+        "api": "http://10.0.0.13:12233"
+    },
+    "database": {
+        "user": "evox",
+        "host": "10.0.0.13",
+        "port": 5432,
+        "database": "postgres",
+        "password": "123456"
+    }
+```
+
+1. `"api"` The address of your evox node.
+2. `"frontEnd_api"` The address of the angular uses for CORS. seems to not like 127.0.0.1
+3. `"server_port"` Port of backend API used by angular to obtain data.
+4. `"auditable_wallet"` FDQN of your auditable wallet running as a service.
+5. `"database"` credentials and location of a postgresql database
+
+#### Run Backend Server
+
+```
+node server-pg.js
+```
+
+## Build Frontend For Production
+
+#### Install ng
+
+```
+sudo apt install ng-common
+```
+
+Following command will produce a `dist` folder that you can copy to your a web server
+
+```
+npm run 'build prod'
+```
+# Clone it
+
+```
+git clone https://github.com/evolution-project/block_explorer.git
+cd block_explorer
+npm install
+```
+
+# Postgresql
+
+## Update system and install packages
+
+```
+sudo apt update && sudo apt install postgresql curl postgresql-contrib
+sudo systemctl start postgresql
+```
+
+## Add a New Role
+
+1. Connect as postgres user and enter psql prompt - NO NEED
+
+```
+sudo -u postgres psql
+```
+
+2. Create a new role with pass in teminal
+
+```
+sudo -u postgres createuser --interactive --pwprompt
+```
+
+`Output`
+
+`Enter name of role to add: evox`
+
+`Enter Password`
+
+`Confirm Pass`
+
+`Shall the new role be a superuser? (y/n) y`
+
+## Configure postgresql for remote access
+
+1. Edit postgresql.conf
+
+```
+sudo nano /etc/postgresql/13/main/postgresql.conf
+
+change and uncomit line `list_address = 'localhost' to `listen_address = '*'
+```
+
+2. Edit pg_hba.conf and add a new line
+   NOTE: **_For Security reasons you should never use 0.0.0.0/0, limit to an IP address or to a Subnet._**
+
+```
+# TYPE  DATABASE    USER    ADDRESS       METHOD
+host    all         all     0.0.0.0/0     md5
+```
+
+3. Open firewall port - no need for this step if ufw is inactive
+
+```
+sudo ufw allow 5432/tcp
+```
+
+4. Restart Postgresql Service
+
+```
+sudo systemctl restart postgresql
+```
+
+# Install pgAdmin4 postgresql tool on client machine
+
+## Update Ubuntu repositories
+
+```
+sudo apt-get install curl gnupg2 -y
+sudo curl https://www.pgadmin.org/static/packages_pgadmin_org.pub | sudo apt-key add
+sudo sh -c 'echo "deb https://ftp.postgresql.org/pub/pgadmin/pgadmin4/apt/$(lsb_release -cs) pgadmin4 main" > /etc/apt/sources.list.d/pgadmin4.list && apt update'
+```
+
+## Install pgAdmin4
+
+```
+sudo apt install pgadmin4-desktop
+```
+
+## Start pgAdmin4
+
+1. create a connection to your server, provide a master password
+2. connect to your server with the role created previously
+
+`username: evox`
+
+`password: 123456`
+
+3. Right click `Database` and select create Database
+4. From the toolbar select `query tool`
+5. In the query editor open file and select `database.sql`
+6. Run the query to create the `db` schema and tables necessary to run block_explorer
+
+# Nginx Setup
+
+## Instal nginx and certbot
+
+```
+sudo apt install nginx certbot python3-certbot-nginx
+```
+
+2. Start Nginx if is not started
+
+Check nginx status
+
+```
+sudo systemctl status nginx
+```
+
+```
+sudo systemctl nginx start
+```
+
+## Create site configuration
+
+```
+sudo nano /etc/nginx/sites-available/chain.evolution-network.org
+```
+
+```
+server {
+    server_name chain.evolution-network.org;
+
+    gzip on;
+    gzip_types *;
+    gzip_min_length 500;
+
+    # Set files location
+    root /var/www/block-explorer/dist/;
+    index index.html;
+
+    location ~ ^/(.*) {
+        proxy_pass http://127.0.0.1:8008/$1$is_args$args;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        #wss requires nginx 1.4
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+    }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/evox.smartcoinpool.net/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/evox.smartcoinpool.net/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+
+server {
+    if ($host = chain.evolution-network.org) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    server_name .net;
+    return 404; # managed by Certbot
+
+
+}
+```
+# Screenshot
+
+<img src="https://raw.githubusercontent.com/evolution-project/block_explorer/master/screenshot.png" width="70%" height="70%">

@@ -1,0 +1,8 @@
+/.idea/
+/node_modules/
+/db
+/package-lock.json
+/dist
+/.angular/
+/backend/node_modules/
+db
